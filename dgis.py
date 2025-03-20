@@ -10,6 +10,7 @@ router = APIRouter()
 
 @router.get("/parse_reviews/2gis/")
 async def parse_reviews(filial_id: int):
+    filial_id_str = str(filial_id)
     URL = f"https://public-api.reviews.2gis.com/2.0/branches/{filial_id}/reviews"
 
     async def fetch_reviews(offset=50, delay=7):
@@ -19,7 +20,7 @@ async def parse_reviews(filial_id: int):
             async with session.get(URL, params=params) as response:
                 if response.status != 200:
                     print(await response.json())
-                    return get_error_response(response.status, "Ошибка запроса к 2ГИС")
+                    return get_error_response(response.status, "Ошибка запроса к 2ГИС", filial_id=filial_id_str)
 
                 data = await response.json()
 
@@ -27,7 +28,7 @@ async def parse_reviews(filial_id: int):
                     print("Отзывов больше нет, парсинг завершен")
                     return
 
-                if not await save_reviews_to_storage(get_success_response(data["reviews"])):
+                if not await save_reviews_to_storage(get_success_response(data["reviews"], filial_id=filial_id_str)):
                     print("Парсинг завершен, микросервис вернул false")
                     return
 

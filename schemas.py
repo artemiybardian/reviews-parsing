@@ -6,3 +6,4 @@ class ReviewListSchema(BaseModel):
     status: str
     data: List[Dict]
     error: Union[Dict, None]
+    filial_id: str

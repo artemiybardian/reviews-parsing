@@ -10,6 +10,7 @@ router = APIRouter()
 
 @router.get("/parse_reviews/flamp/")
 async def parse_reviews(filial_id: int):
+    filial_id_str = str(filial_id)
     ACCESS_TOKEN_URL = f"https://perm.flamp.ru/firm/{filial_id}/"
     REVIEWS_API_URL = f"https://flamp.ru/api/2.0/filials/{filial_id}/reviews?limit={REVIEWS_LIMIT}"
     access_token = await get_access_token(ACCESS_TOKEN_URL)
@@ -21,9 +22,11 @@ async def parse_reviews(filial_id: int):
         reviews_batch = await get_reviews_batch(REVIEWS_API_URL, access_token, ACCESS_TOKEN_URL, offset_id)
 
         if reviews_batch["status"] == "error":
-            return get_error_response(reviews_batch["error"]["code"], reviews_batch["error"]["message"])
+            return get_error_response(
+                reviews_batch["error"]["code"], reviews_batch["error"]["message"], filial_id=filial_id_str
+            )
 
-        reviews_json = get_success_response(reviews_batch["data"])
+        reviews_json = get_success_response(reviews_batch["data"], filial_id=filial_id_str)
 
         # Отправляем партию отзывов в микросервис
         async with aiohttp.ClientSession() as session:
