@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fake_useragent import UserAgent
 from config import FLAMP_API, REVIEWS_LIMIT
+from responses import get_success_response, get_error_response
 import aiohttp
 import asyncio
 
@@ -13,29 +14,30 @@ async def parse_reviews(filial_id: int):
     REVIEWS_API_URL = f"https://flamp.ru/api/2.0/filials/{filial_id}/reviews?limit={REVIEWS_LIMIT}"
     access_token = await get_access_token(ACCESS_TOKEN_URL)
     if not access_token:
-        raise HTTPException(status_code=500, detail="Не удалось получить токен доступа.")
+        return {"status": "error", "data": [], "error": {"code": 500, "message": "Не удалось получить токен доступа."}}
 
     offset_id = None
     while True:
-        reviews_batch, offset_id = await get_reviews_batch(REVIEWS_API_URL, access_token, ACCESS_TOKEN_URL, offset_id)
+        reviews_batch = await get_reviews_batch(REVIEWS_API_URL, access_token, ACCESS_TOKEN_URL, offset_id)
 
-        if not reviews_batch:
-            print("Отзывов больше нет, парсинг завершен")
-            break  # Если отзывов больше нет, выходим из цикла
+        if reviews_batch["status"] == "error":
+            return get_error_response(reviews_batch["error"]["code"], reviews_batch["error"]["message"])
+
+        reviews_json = get_success_response(reviews_batch["data"])
 
         # Отправляем партию отзывов в микросервис
         async with aiohttp.ClientSession() as session:
-            async with session.post(FLAMP_API, json={"reviews": reviews_batch}) as response:
+            async with session.post(FLAMP_API, json=reviews_json) as response:
                 if response.status == 200:
-                    print(f"Партия из {len(reviews_batch)} отзывов успешно отправлена в микросервис.")
+                    print(f"Партия из {len(reviews_batch["data"])} отзывов успешно отправлена в микросервис.")
                     print("Завершена часть парсинга.")
                 else:
                     print(f"Ошибка отправки: {response.status}")
-                    break  # Если произошла ошибка, прекращаем обработку
+                    break
 
                 response_json = await response.json()
                 if not response_json.get("result"):
-                    print(f"Партия из {len(reviews_batch)} отзывов успешно отправлена в микросервис.")
+                    print(f"Партия из {len(reviews_batch["data"])} отзывов успешно отправлена в микросервис.")
                     print("Парсинг завершен, микросервис вернул false")
                     break
         await asyncio.sleep(7)
@@ -45,6 +47,9 @@ async def parse_reviews(filial_id: int):
 
 async def get_access_token(access_token_url: str):
     url = await get_filial_url_with_slug(access_token_url)
+
+    if not url:
+        return None
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -100,7 +105,7 @@ async def get_reviews_batch(
                     data = await response.json()
                     reviews = data.get("reviews", [])
                     offset_id = reviews[-1]["id"] if reviews else None
-                    return reviews, offset_id
+                    return get_success_response(reviews, offset_id=offset_id)
 
         except Exception as e:
             print(f"Ошибка при запросе (попытка {attempt + 1}): {e}")
@@ -110,4 +115,4 @@ async def get_reviews_batch(
 
     # После завершения всех попыток
     print("Не удалось получить данные после нескольких попыток.")
-    return [], None
+    return get_error_response(500, "Не удалось получить данные после нескольких попыток.", offset_id=None)

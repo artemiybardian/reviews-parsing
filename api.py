@@ -1,7 +1,6 @@
 from fastapi import APIRouter
-from typing import Dict, Any, List
-from pydantic import BaseModel
 from pathlib import Path
+from schemas import ReviewListSchema
 import random
 import json
 import aiofiles
@@ -9,12 +8,9 @@ import aiofiles
 router = APIRouter()
 
 
-class ReviewListModel(BaseModel):
-    reviews: List[Dict[str, Any]]
-
-
 @router.post("/random_bool/")
-async def random_bool(request: ReviewListModel):
+async def random_bool(request: ReviewListSchema):
+
     file_path = Path("reviews_dump.json")
 
     # Добавление в файл по желанию, для проверки правильной работы

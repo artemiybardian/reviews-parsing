@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from config import DGIS_API, DGIS_API_KEY, REVIEWS_LIMIT
+from schemas import ReviewListSchema
+from responses import get_error_response, get_success_response
 import aiohttp
 import asyncio
 
@@ -17,7 +19,7 @@ async def parse_reviews(filial_id: int):
             async with session.get(URL, params=params) as response:
                 if response.status != 200:
                     print(await response.json())
-                    raise HTTPException(status_code=response.status, detail="Ошибка запроса к 2ГИС")
+                    return get_error_response(response.status, "Ошибка запроса к 2ГИС")
 
                 data = await response.json()
 
@@ -25,7 +27,7 @@ async def parse_reviews(filial_id: int):
                     print("Отзывов больше нет, парсинг завершен")
                     return
 
-                if not await save_reviews_to_storage(data["reviews"]):
+                if not await save_reviews_to_storage(get_success_response(data["reviews"])):
                     print("Парсинг завершен, микросервис вернул false")
                     return
 
@@ -41,10 +43,9 @@ async def parse_reviews(filial_id: int):
     return {"message": "Парсинг завершён успешно."}
 
 
-async def save_reviews_to_storage(reviews):
+async def save_reviews_to_storage(reviews: ReviewListSchema):
     async with aiohttp.ClientSession() as session:
-        async with session.post(DGIS_API, json={"reviews": reviews}) as response:
+        async with session.post(DGIS_API, json=reviews) as response:
             if response.status != 200:
-                print(await response.json())
                 return False
             return (await response.json()).get("result", False)
