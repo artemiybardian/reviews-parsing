@@ -1,15 +1,18 @@
 from fastapi import APIRouter
 from fake_useragent import UserAgent
+from pathlib import Path
 from config import FLAMP_API, REVIEWS_LIMIT
 from responses import get_success_response, get_error_response
 import aiohttp
 import asyncio
+import aiofiles
+import json
 
 router = APIRouter()
 
 
 @router.get("/parse_reviews/flamp/")
-async def parse_reviews(filial_id: int):
+async def parse_reviews(filial_id: int, timeout: int = 7):
     filial_id_str = str(filial_id)
     ACCESS_TOKEN_URL = f"https://perm.flamp.ru/firm/{filial_id}/"
     REVIEWS_API_URL = f"https://flamp.ru/api/2.0/filials/{filial_id}/reviews?limit={REVIEWS_LIMIT}"
@@ -28,6 +31,12 @@ async def parse_reviews(filial_id: int):
 
         reviews_json = get_success_response(reviews_batch["data"], filial_id=filial_id_str)
 
+        # file_path = Path("reviews_json.json")
+
+        # Добавление в файл по желанию, для проверки правильной работы
+        # async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+        #     await f.write(json.dumps(reviews_json, ensure_ascii=False, indent=4))
+
         # Отправляем партию отзывов в микросервис
         async with aiohttp.ClientSession() as session:
             async with session.post(FLAMP_API, json=reviews_json) as response:
@@ -43,9 +52,9 @@ async def parse_reviews(filial_id: int):
                     print(f"Партия из {len(reviews_batch["data"])} отзывов успешно отправлена в микросервис.")
                     print("Парсинг завершен, микросервис вернул false")
                     break
-        await asyncio.sleep(7)
+        await asyncio.sleep(timeout)
 
-    return {"message": "Парсинг завершён успешно."}
+    return {"status": "success", "error": None, "message": "Парсинг завершён успешно."}
 
 
 async def get_access_token(access_token_url: str):
@@ -98,6 +107,7 @@ async def get_reviews_batch(
                     if response.status == 401:
                         print(f"401 Unauthorized, обновляю access_token... (попытка {attempt + 1})")
                         access_token = await get_access_token(access_token_url=access_token_url)
+                        await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
                         print(f"Ошибка запроса (попытка {attempt + 1}): {response.status}")
@@ -111,7 +121,7 @@ async def get_reviews_batch(
                     return get_success_response(reviews, offset_id=offset_id)
 
         except Exception as e:
-            print(f"Ошибка при запросе (попытка {attempt + 1}): {e}")
+            print(f"Ошибка при запросе (попытка {attempt + 1}): {str(e)}")
             if attempt < retries - 1:
                 print(f"Попытка повторения через {delay} секунд...")
                 await asyncio.sleep(delay)
