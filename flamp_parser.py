@@ -1,12 +1,12 @@
-from fastapi import APIRouter
+import asyncio
+import json
+
+import aiohttp
 from fake_useragent import UserAgent
-from pathlib import Path
+from fastapi import APIRouter
+
 from config import FLAMP_API, REVIEWS_LIMIT
 from responses import get_success_response, get_error_response
-import aiohttp
-import asyncio
-import aiofiles
-import json
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.get("/parse_reviews/flamp/")
 async def parse_reviews(filial_id: int, timeout: int = 7):
     filial_id_str = str(filial_id)
-    ACCESS_TOKEN_URL = f"https://perm.flamp.ru/firm/{filial_id}/"
+    ACCESS_TOKEN_URL = f"https://flamp.ru/firm/{filial_id}/"
     REVIEWS_API_URL = f"https://flamp.ru/api/2.0/filials/{filial_id}/reviews?limit={REVIEWS_LIMIT}"
     access_token = await get_access_token(ACCESS_TOKEN_URL)
     if not access_token:
@@ -29,8 +29,6 @@ async def parse_reviews(filial_id: int, timeout: int = 7):
                 reviews_batch["error"]["code"], reviews_batch["error"]["message"], filial_id=filial_id_str
             )
 
-        reviews_json = get_success_response(reviews_batch["data"], filial_id=filial_id_str)
-
         # file_path = Path("reviews_json.json")
 
         # Добавление в файл по желанию, для проверки правильной работы
@@ -39,7 +37,7 @@ async def parse_reviews(filial_id: int, timeout: int = 7):
 
         # Отправляем партию отзывов в микросервис
         async with aiohttp.ClientSession() as session:
-            async with session.post(FLAMP_API, json=reviews_json) as response:
+            async with session.post(FLAMP_API+str(filial_id), json=reviews_batch) as response:
                 if response.status == 200:
                     print(f"Партия из {len(reviews_batch["data"])} отзывов успешно отправлена в микросервис.")
                     print("Завершена часть парсинга.")
@@ -47,8 +45,8 @@ async def parse_reviews(filial_id: int, timeout: int = 7):
                     print(f"Ошибка отправки: {response.status}")
                     break
 
-                response_json = await response.json()
-                if not response_json.get("result"):
+                response = await response.json()
+                if not response:
                     print(f"Партия из {len(reviews_batch["data"])} отзывов успешно отправлена в микросервис.")
                     print("Парсинг завершен, микросервис вернул false")
                     break
@@ -82,7 +80,7 @@ async def get_filial_url_with_slug(access_token_url: str):
 
 
 async def get_reviews_batch(
-    reviews_api_url: str, access_token: str, access_token_url: str, offset_id=None, retries=3, delay=7
+    reviews_api_url: str, access_token: str, access_token_url: str, offset_id=None, retries=13, delay=7
 ):
     if not access_token:
         print("Ошибка: Access Token не найден!")

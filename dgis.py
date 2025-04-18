@@ -14,10 +14,10 @@ router = APIRouter()
 @router.get("/parse_reviews/2gis/")
 async def parse_reviews(filial_id: int):
     try:
-        filial_id_str = str(filial_id)
-        URL = f"https://public-api.reviews.2gis.com/2.0/branches/{filial_id}/reviews"
+        filial_id_str = str(filial_id+1)  # Делаем +1 так как в апи айди на 1 больше
+        URL = f"https://public-api.reviews.2gis.com/2.0/branches/{filial_id_str}/reviews"
 
-        async def fetch_reviews(offset=50, delay=7):
+        async def fetch_reviews(offset=0, delay=7):
             try:
                 params = {"limit": REVIEWS_LIMIT, "offset": offset, "key": DGIS_API_KEY}
 
@@ -35,7 +35,7 @@ async def parse_reviews(filial_id: int):
                                 print("Отзывов больше нет, парсинг завершен")
                                 return
 
-                            reviews_json = get_success_response(data["reviews"], filial_id=filial_id_str)
+                            reviews = get_success_response(data)
 
                             # file_path = Path("reviews_json.json")
 
@@ -44,7 +44,7 @@ async def parse_reviews(filial_id: int):
                             #     await f.write(json.dumps(reviews_json, ensure_ascii=False, indent=4))
 
                             try:
-                                continue_parsing = await save_reviews_to_storage(reviews_json)
+                                continue_parsing = await save_reviews_to_storage(reviews, filial_id)
                                 if not continue_parsing:
                                     print("Парсинг завершен, микросервис вернул false")
                                     return
@@ -77,9 +77,10 @@ async def parse_reviews(filial_id: int):
         return get_error_response(500, "Критическая ошибка сервера", filial_id=str(filial_id))
 
 
-async def save_reviews_to_storage(reviews: ReviewListSchema):
+async def save_reviews_to_storage(reviews: dict, filial_id: int):
     async with aiohttp.ClientSession() as session:
-        async with session.post(DGIS_API, json=reviews) as response:
+        url = f"{DGIS_API}{filial_id}"
+        async with session.post(url, json=reviews) as response:
             if response.status != 200:
                 return False
-            return (await response.json()).get("result", False)
+            return await response.json()
