@@ -5,7 +5,7 @@ import aiohttp
 from fake_useragent import UserAgent
 from fastapi import APIRouter
 
-from config import FLAMP_API, REVIEWS_LIMIT
+from config import FLAMP_API, REVIEWS_LIMIT, FLAMP_API_KEY
 from responses import get_success_response, get_error_response
 
 router = APIRouter()
@@ -16,10 +16,11 @@ async def parse_reviews(filial_id: int, timeout: int = 7):
     filial_id_str = str(filial_id)
     ACCESS_TOKEN_URL = f"https://flamp.ru/firm/{filial_id}/"
     REVIEWS_API_URL = f"https://flamp.ru/api/2.0/filials/{filial_id}/reviews?limit={REVIEWS_LIMIT}"
-    access_token = await get_access_token(ACCESS_TOKEN_URL)
-    if not access_token:
-        return {"status": "error", "data": [], "error": {"code": 500, "message": "Не удалось получить токен доступа."}}
+    # access_token = await get_access_token(ACCESS_TOKEN_URL)
+    # if not access_token:
+    #     return {"status": "error", "data": [], "error": {"code": 500, "message": "Не удалось получить токен доступа."}}
 
+    access_token = FLAMP_API_KEY
     offset_id = None
     while True:
         reviews_batch = await get_reviews_batch(REVIEWS_API_URL, access_token, ACCESS_TOKEN_URL, offset_id)
@@ -29,6 +30,9 @@ async def parse_reviews(filial_id: int, timeout: int = 7):
                 reviews_batch["error"]["code"], reviews_batch["error"]["message"], filial_id=filial_id_str
             )
 
+        if len(reviews_batch["data"]) == 0:
+            print("Отзывов больше нет")
+            break
         # file_path = Path("reviews_json.json")
 
         # Добавление в файл по желанию, для проверки правильной работы
@@ -41,6 +45,7 @@ async def parse_reviews(filial_id: int, timeout: int = 7):
                 if response.status == 200:
                     print(f"Партия из {len(reviews_batch["data"])} отзывов успешно отправлена в микросервис.")
                     print("Завершена часть парсинга.")
+                    offset_id = reviews_batch["offset_id"]
                 else:
                     print(f"Ошибка отправки: {response.status}")
                     break
@@ -65,6 +70,7 @@ async def get_access_token(access_token_url: str):
         async with session.get(url) as response:
             cookies = response.cookies
             access_token = cookies.get("__cat").value if "__cat" in cookies else "Не найдено"
+            print(access_token)
 
     return access_token
 
